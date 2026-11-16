@@ -9304,6 +9304,19 @@
       updateRiderAndBeltDropdownVisibility();
     }
 
+    // ★ フォーム一覧（カード）でのライダー写真の位置・大きさ（変身画面とは独立。未設定なら変身画面の値を縮小して使う）
+    function hasIndependentCardPos(form) {
+      return Boolean(form && typeof form.cardScale === 'number');
+    }
+    function getFormCardPos(form) {
+      // フォーム一覧のカードは変身画面とは完全に別設定（初期値は 100% / 0 / 0）
+      return {
+        scale: typeof form.cardScale === 'number' ? form.cardScale : 100,
+        x: typeof form.cardOffsetX === 'number' ? form.cardOffsetX : 0,
+        y: typeof form.cardOffsetY === 'number' ? form.cardOffsetY : 0
+      };
+    }
+
     // --- フォーム図鑑の並び替え：選択した複数フォームをまとめて移動 ---
     function getFormReorderSelection() {
       if (!Array.isArray(AppState.formReorderSelectedIds)) AppState.formReorderSelectedIds = [];
@@ -9519,7 +9532,8 @@
         const mainColor = form.themeColor || (formRider ? formRider.themeColor : '#f97316');
         const stageRefH = Math.max(180, Number(cfg.formStageHeight) || 340);
         const cardScaleRatio = imgHeightPx / stageRefH;
-        const formCardRiderTransform = getTransformCss(form.riderScale ?? 100, Math.round((form.riderOffsetX ?? 0) * cardScaleRatio), Math.round((form.riderOffsetY ?? 0) * cardScaleRatio));
+        const cardPos = getFormCardPos(form);
+        const formCardRiderTransform = getTransformCss(cardPos.scale, cardPos.x, cardPos.y);
 
         const usedItems = [];
         if (form.isPowerForm) {
@@ -11407,14 +11421,14 @@
           <!-- ★ 各フォームの「画像位置・拡大縮小調整」アコーディオン（ライダー写真＆セット時ベルトのX/Yオフセット・スケール） -->
           <details class="bg-[#14110d] rounded-lg border border-amber-500/40 p-2 text-xs">
             <summary class="cursor-pointer font-bold text-[10px] text-amber-300 flex items-center justify-between select-none">
-              <span><i class="fa-solid fa-arrows-up-down-left-right mr-1"></i>画像位置・拡大縮小の微調整 (ライダー写真 / セット時ベルト)</span>
+              <span><i class="fa-solid fa-arrows-up-down-left-right mr-1"></i>画像位置・拡大縮小の微調整 (変身画面 / フォーム一覧 / セット時ベルト)</span>
               <span class="text-[9px] text-[#9c8c74]">タップして開閉</span>
             </summary>
             <div class="mt-2 pt-2 border-t border-[#3d3327] grid grid-cols-1 sm:grid-cols-2 gap-3 text-[10px]">
               <!-- ライダー写真の位置調整 -->
               <div class="space-y-1.5 bg-black/40 p-2 rounded border border-[#3d3327]">
                 <div class="flex items-center justify-between font-bold text-amber-200">
-                  <span>ライダー写真の位置・サイズ</span>
+                  <span>変身画面での写真の位置・サイズ</span>
                   <button type="button" class="px-1.5 py-0.5 rounded bg-[#2b241c] text-amber-300 text-[8px] btn-reset-form-rider-pos" data-id="${form.id}">リセット</button>
                 </div>
                 <div>
@@ -11430,6 +11444,27 @@
                   <input type="range" min="-120" max="120" value="${form.riderOffsetY ?? 0}" class="w-full accent-amber-400 input-form-rider-y" data-id="${form.id}">
                 </div>
               </div>
+
+              <!-- フォーム一覧（カード）でのライダー写真の位置調整：変身画面とは別 -->
+              ${(() => { const cp = getFormCardPos(form); return `
+              <div class="space-y-1.5 bg-black/40 p-2 rounded border border-sky-400/60">
+                <div class="flex items-center justify-between font-bold text-sky-200 gap-1">
+                  <span>フォーム一覧での写真の位置・サイズ</span>
+                  <button type="button" class="px-1.5 py-0.5 rounded bg-[#2b241c] text-sky-300 text-[8px] btn-reset-form-card-pos" data-id="${form.id}">リセット</button>
+                </div>
+                <div>
+                  <div class="flex justify-between"><span>拡大率</span><span class="lbl-form-card-scale" data-id="${form.id}">${cp.scale}%</span></div>
+                  <input type="range" min="50" max="220" value="${cp.scale}" class="w-full accent-sky-400 input-form-card-pos" data-key="scale" data-id="${form.id}">
+                </div>
+                <div>
+                  <div class="flex justify-between"><span>左右位置 (X)</span><span class="lbl-form-card-x" data-id="${form.id}">${cp.x}px</span></div>
+                  <input type="range" min="-80" max="80" value="${cp.x}" class="w-full accent-sky-400 input-form-card-pos" data-key="x" data-id="${form.id}">
+                </div>
+                <div>
+                  <div class="flex justify-between"><span>上下位置 (Y)</span><span class="lbl-form-card-y" data-id="${form.id}">${cp.y}px</span></div>
+                  <input type="range" min="-80" max="80" value="${cp.y}" class="w-full accent-sky-400 input-form-card-pos" data-key="y" data-id="${form.id}">
+                </div>
+              </div>`; })()}
 
               <!-- セット時ベルト画像の位置調整 -->
               <div class="space-y-1.5 bg-black/40 p-2 rounded border border-[#3d3327]">
@@ -11557,6 +11592,31 @@
           }
         });
       });
+      document.querySelectorAll('.input-form-card-pos').forEach(inp => {
+        inp.addEventListener('input', () => {
+          const f = AppState.forms.find(x => x.id === inp.dataset.id);
+          if (!f) return;
+          const v = Number(inp.value);
+          if (inp.dataset.key === 'scale') f.cardScale = v;
+          if (inp.dataset.key === 'x') f.cardOffsetX = v;
+          if (inp.dataset.key === 'y') f.cardOffsetY = v;
+          const lbl = dom.formListArea.querySelector(`.lbl-form-card-${inp.dataset.key}[data-id="${f.id}"]`);
+          if (lbl) lbl.textContent = inp.dataset.key === 'scale' ? `${v}%` : `${v}px`;
+          clearTimeout(f.__cardSaveT);
+          f.__cardSaveT = setTimeout(async () => { delete f.__cardSaveT; renderItemTray(); await saveCurrentData(); }, 120);
+        });
+      });
+      document.querySelectorAll('.btn-reset-form-card-pos').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const f = AppState.forms.find(x => x.id === btn.dataset.id);
+          if (!f) return;
+          f.cardScale = 100; f.cardOffsetX = 0; f.cardOffsetY = 0;
+          await saveCurrentData();
+          renderModalFormList();
+          renderItemTray();
+        });
+      });
+
       document.querySelectorAll('.btn-reset-form-rider-pos').forEach(btn => {
         btn.addEventListener('click', async () => {
           const f = AppState.forms.find(x => x.id === btn.dataset.id);
