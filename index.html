@@ -7699,9 +7699,10 @@
       const lbl = getPseudoLabel(r);
       return lbl ? `${n}〔${lbl}〕` : n;
     }
+    // 同じ変身者（同一人物）が使う別の変身システムのライダー
     function getPseudoBaseLineText(r) {
       const base = getPseudoBaseRider(r);
-      return base ? `（元: ${base.name || '名称未設定'}）` : '';
+      return base ? `（${base.name || '名称未設定'}と同じ変身者）` : '';
     }
     function buildPseudoBadgeHtml(r, withBase = true) {
       if (!isPseudoRider(r)) return '';
@@ -12557,9 +12558,9 @@
                 ${isPseudoRider(rider) ? `
                   <span class="text-[9px] text-[#9c8c74]">呼び方:</span>
                   <input type="text" class="w-28 bg-[#14110d] border border-fuchsia-400/70 rounded px-2 py-0.5 text-[10px] text-fuchsia-100 input-rider-pseudo-label" data-id="${rider.id}" value="${getPseudoLabel(rider)}" placeholder="空欄でマークなし" title="マークや名前の横に出る呼び方（例: 擬似ライダー / 偽ライダー / アナザー）">
-                  <span class="text-[9px] text-[#9c8c74]">元のライダー:</span>
+                  <span class="text-[9px] text-[#9c8c74]">同じ変身者のライダー:</span>
                   <select class="bg-[#14110d] border border-fuchsia-400/70 rounded px-2 py-0.5 text-[10px] text-fuchsia-200 select-rider-base" data-id="${rider.id}">
-                    <option value="">なし（独立した擬似ライダー）</option>
+                    <option value="">なし（別人・独立）</option>
                     ${AppState.riders.filter(x => x.id !== rider.id && !isPseudoRider(x)).map(x => `<option value="${x.id}" ${rider.baseRiderId === x.id ? 'selected' : ''}>${x.name || '名称未設定'}</option>`).join('')}
                   </select>` : ''}
               </div>
@@ -12856,6 +12857,11 @@
           const r = AppState.riders.find(x => x.id === sel.dataset.id);
           if (!r) return;
           r.baseRiderId = sel.value || '';
+          // 同一人物なので、変身者名が未入力なら相手のライダーからコピー
+          const base = getPseudoBaseRider(r);
+          if (base && !(typeof r.characterName === 'string' && r.characterName.trim() !== '')) {
+            r.characterName = getRiderCharacterName(base);
+          }
           await saveCurrentData();
           renderAllModalContents();
           refreshAllUI();
