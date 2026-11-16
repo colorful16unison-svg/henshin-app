@@ -6929,7 +6929,7 @@
       const infoMode = cfg.formStageInfoMode || 'full';
 
       const formRider = AppState.riders.find(r => r.id === form.riderId) || getCurrentRider();
-      titleBadge.textContent = `${formRider ? formRider.name + ' ' : ''}${form.formName || ''}`.trim();
+      titleBadge.textContent = `${formRider ? getRiderDisplayName(formRider) + ' ' : ''}${form.formName || ''}`.trim();
 
       const isFormsEncyclopediaMode = (AppState.mainTrayViewMode === 'forms');
       const inlineEditorBox = document.getElementById('inlineFormDescEditorBox');
@@ -7049,7 +7049,7 @@
 
       const formRider = AppState.riders.find(r => r.id === form.riderId) || getCurrentRider();
       if (formRider) {
-        dom.hudRiderName.textContent = formRider.name || 'ライダー名称未設定';
+        dom.hudRiderName.textContent = getRiderDisplayName(formRider, 'ライダー名称未設定');
       }
 
       const usedItemNames = [];
@@ -7681,6 +7681,34 @@
       rider.beltIds.sort((a, b) => AppState.belts.findIndex(x => x.id === a) - AppState.belts.findIndex(x => x.id === b));
       if (!rider.beltIds.includes(rider.beltId)) rider.beltId = rider.beltIds[0] || '';
       return rider.beltIds;
+    }
+
+    // ★ 擬似ライダー（正規ライダーとは別の、ライダーに似た姿）
+    function isPseudoRider(r) { return Boolean(r && r.riderType === 'pseudo'); }
+    function getPseudoBaseRider(r) {
+      if (!isPseudoRider(r) || !r.baseRiderId) return null;
+      return AppState.riders.find(x => x.id === r.baseRiderId) || null;
+    }
+    // 擬似ライダーの呼び方（ライダーごとに自由に変更可。空欄ならマークなし）
+    function getPseudoLabel(r) {
+      if (!isPseudoRider(r)) return '';
+      return (r.pseudoLabel !== undefined && r.pseudoLabel !== null) ? String(r.pseudoLabel).trim() : '擬似ライダー';
+    }
+    function getRiderDisplayName(r, fallback) {
+      const n = (r && r.name) || fallback || '';
+      const lbl = getPseudoLabel(r);
+      return lbl ? `${n}〔${lbl}〕` : n;
+    }
+    function getPseudoBaseLineText(r) {
+      const base = getPseudoBaseRider(r);
+      return base ? `（元: ${base.name || '名称未設定'}）` : '';
+    }
+    function buildPseudoBadgeHtml(r, withBase = true) {
+      if (!isPseudoRider(r)) return '';
+      const lbl = getPseudoLabel(r);
+      const baseTxt = withBase ? getPseudoBaseLineText(r) : '';
+      return `${lbl ? `<span class="px-1.5 py-0.5 rounded bg-fuchsia-700/80 border border-fuchsia-300/60 text-[8px] font-black text-white shrink-0">${lbl}</span>` : ''}${
+        baseTxt ? `<span class="text-[9px] text-fuchsia-200/90 truncate shrink min-w-0">${baseTxt}</span>` : ''}`;
     }
 
     // ライダー名の下に並べるドライバー表示（紐付けた全ベルト）
@@ -8655,7 +8683,7 @@
       const rider = getCurrentRider();
       syncBeltFromCurrentRider();
       if (rider) {
-        dom.hudRiderName.textContent = rider.name || 'ライダー名称未設定';
+        dom.hudRiderName.textContent = getRiderDisplayName(rider, 'ライダー名称未設定');
         if (AppState.status === 'IDLE') {
           applyTheme(
             rider.themeColor || (series ? series.themeColor : '#f97316'),
@@ -8835,7 +8863,7 @@
                   <div class="flex items-center gap-2 min-w-0">
                     <span class="w-3 h-3 rounded-full border border-white/60 shrink-0" style="background: linear-gradient(135deg, ${r.themeColor || s.themeColor || '#f97316'}, ${r.subColor || r.themeColor || '#fbbf24'});"></span>
                     <div class="min-w-0 space-y-1">
-                      <div class="text-xs font-black truncate">${r.name || '名称未設定ライダー'}</div>
+                      <div class="text-xs font-black flex items-center gap-1 min-w-0"><span class="truncate">${r.name || '名称未設定ライダー'}</span>${buildPseudoBadgeHtml(r, false)}</div>
                       <div class="flex flex-wrap items-center gap-1 min-w-0">${buildRiderBeltChipsHtml(r, '')}</div>
                       ${charName ? `<div class="text-[9px] text-amber-300/90 truncate">変身者: ${charName}</div>` : ''}
                     </div>
@@ -9059,10 +9087,12 @@
               ` : ''}
               <span class="w-4 h-4 rounded-full border border-white/50 shrink-0 flex items-center justify-center text-[8px] font-scifi text-white" style="background: linear-gradient(135deg, ${r.themeColor || '#f97316'}, ${r.subColor || r.themeColor || '#fbbf24'})">${idx + 1}</span>
               <span class="truncate">${r.name || '名称未設定ライダー'}</span>
+              ${buildPseudoBadgeHtml(r, false)}
               ${isSwapSource ? `<span class="px-1.5 py-0.2 rounded bg-amber-400 text-black text-[8px] font-black shrink-0">交換先をタップ</span>` : ''}
             </div>
             <div class="flex flex-wrap items-center gap-1 min-w-0 pl-6">
               ${buildRiderBeltChipsHtml(r, isCurrent ? AppState.currentBeltId : '')}
+              ${getPseudoBaseRider(r) ? `<span class="text-[9px] text-fuchsia-200/90 truncate">${getPseudoBaseLineText(r)}</span>` : ''}
             </div>
           </div>
           ${rightControlsHtml}
@@ -9116,7 +9146,7 @@
           } else {
             AppState.currentRiderId = r.id;
             syncBeltFromCurrentRider();
-            dom.hudRiderName.textContent = r.name || '名称未設定';
+            dom.hudRiderName.textContent = getRiderDisplayName(r, '名称未設定');
             AppState.isRiderDropdownOpen = false;
             updateRiderAndBeltDropdownVisibility();
             resetSlots();
@@ -12518,9 +12548,24 @@
                   <i class="fa-solid fa-filter mr-0.5"></i>フォーム(${riderFormsCount})・アイテム絞り込み
                 </button>
               </div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-[9px] text-[#9c8c74]">種別:</span>
+                <select class="bg-[#14110d] border ${isPseudoRider(rider) ? 'border-fuchsia-400/70 text-fuchsia-200' : 'border-[#4a3e30] text-amber-200'} rounded px-2 py-0.5 text-[10px] select-rider-type" data-id="${rider.id}">
+                  <option value="normal" ${!isPseudoRider(rider) ? 'selected' : ''}>正規ライダー</option>
+                  <option value="pseudo" ${isPseudoRider(rider) ? 'selected' : ''}>擬似ライダー</option>
+                </select>
+                ${isPseudoRider(rider) ? `
+                  <span class="text-[9px] text-[#9c8c74]">呼び方:</span>
+                  <input type="text" class="w-28 bg-[#14110d] border border-fuchsia-400/70 rounded px-2 py-0.5 text-[10px] text-fuchsia-100 input-rider-pseudo-label" data-id="${rider.id}" value="${getPseudoLabel(rider)}" placeholder="空欄でマークなし" title="マークや名前の横に出る呼び方（例: 擬似ライダー / 偽ライダー / アナザー）">
+                  <span class="text-[9px] text-[#9c8c74]">元のライダー:</span>
+                  <select class="bg-[#14110d] border border-fuchsia-400/70 rounded px-2 py-0.5 text-[10px] text-fuchsia-200 select-rider-base" data-id="${rider.id}">
+                    <option value="">なし（独立した擬似ライダー）</option>
+                    ${AppState.riders.filter(x => x.id !== rider.id && !isPseudoRider(x)).map(x => `<option value="${x.id}" ${rider.baseRiderId === x.id ? 'selected' : ''}>${x.name || '名称未設定'}</option>`).join('')}
+                  </select>` : ''}
+              </div>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 <div>
-                  <span class="block text-[9px] text-[#9c8c74] mb-0.5">仮面ライダー名:</span>
+                  <span class="block text-[9px] text-[#9c8c74] mb-0.5">${isPseudoRider(rider) ? '名前（仮面ライダー以外の名前も可）:' : '仮面ライダー名:'}</span>
                   <input type="text" class="w-full bg-[#14110d] border border-[#4a3e30] rounded px-2.5 py-1 text-xs text-amber-100 input-rider-entity-name" data-id="${rider.id}" value="${rider.name || ''}" placeholder="例: 仮面ライダーグリフ">
                 </div>
                 <div>
@@ -12782,6 +12827,38 @@
             renderAllModalContents();
             refreshAllUI();
           }
+        });
+      });
+
+      document.querySelectorAll('.select-rider-type').forEach(sel => {
+        sel.addEventListener('change', async () => {
+          const r = AppState.riders.find(x => x.id === sel.dataset.id);
+          if (!r) return;
+          r.riderType = sel.value === 'pseudo' ? 'pseudo' : 'normal';
+          if (r.riderType !== 'pseudo') r.baseRiderId = '';
+          await saveCurrentData();
+          renderAllModalContents();
+          refreshAllUI();
+        });
+      });
+      document.querySelectorAll('.input-rider-pseudo-label').forEach(inp => {
+        inp.addEventListener('change', async () => {
+          const r = AppState.riders.find(x => x.id === inp.dataset.id);
+          if (!r) return;
+          r.pseudoLabel = inp.value.trim();
+          await saveCurrentData();
+          renderAllModalContents();
+          refreshAllUI();
+        });
+      });
+      document.querySelectorAll('.select-rider-base').forEach(sel => {
+        sel.addEventListener('change', async () => {
+          const r = AppState.riders.find(x => x.id === sel.dataset.id);
+          if (!r) return;
+          r.baseRiderId = sel.value || '';
+          await saveCurrentData();
+          renderAllModalContents();
+          refreshAllUI();
         });
       });
 
