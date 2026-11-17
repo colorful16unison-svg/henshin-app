@@ -1205,6 +1205,10 @@
                   <i class="fa-solid fa-star"></i>
                   <span>強化アイテム追加</span>
                 </button>
+                <button id="btnAddSpecialItem" class="flex-1 sm:flex-none px-2.5 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center justify-center gap-1 transition">
+                  <i class="fa-solid fa-gem"></i>
+                  <span>特殊アイテム追加</span>
+                </button>
               </div>
             </div>
             <div class="flex items-center justify-between border-t border-[#3d3327] pt-2">
@@ -3356,12 +3360,12 @@
       const usedItemNames = [];
       if (form.isPowerForm) {
         const pIt = getItemById(form.powerItemId || form.item1Id);
-        if (pIt) usedItemNames.push(`★${pIt.name || '強化アイテム'}`);
+        if (pIt) usedItemNames.push(`${getItemCategoryMark(pIt)}${pIt.name || (getItemCategoryName(pIt) + 'アイテム')}`);
       } else {
         const c = getFormRequiredItemCount(form);
         [form.item1Id, form.item2Id, form.item3Id].slice(0, c).forEach(id => {
           const it = getItemById(id);
-          if (it) usedItemNames.push(it.isPowerItem ? `★${it.name || '強化'}` : (it.name || 'アイテム'));
+          if (it) usedItemNames.push(it.isPowerItem ? `${getItemCategoryMark(it)}${it.name || getItemCategoryName(it)}` : (it.name || 'アイテム'));
         });
       }
       dom.hudCurrentItemTitle.textContent = usedItemNames.length > 0 ? usedItemNames.join(' / ') : 'フォーム図鑑表示';
@@ -3985,6 +3989,23 @@
       return rider.beltIds;
     }
 
+    // ===== アイテムの区分：通常 / ★強化 / ◆特殊（特殊は強化と同じ1個変身の枠で動く） =====
+    function getItemCategory(it) {
+      if (!it || !it.isPowerItem) return 'normal';
+      return it.isSpecialItem ? 'special' : 'power';
+    }
+    function getItemCategoryMark(it) { return getItemCategory(it) === 'special' ? '◆' : '★'; }
+    function getItemCategoryName(it) { return getItemCategory(it) === 'special' ? '特殊' : '強化'; }
+    function getFormCategoryItem(form) {
+      if (!form || !form.isPowerForm) return null;
+      return getItemById(form.powerItemId || form.item1Id) || null;
+    }
+    function buildFormCategoryBadge(form, extraCls) {
+      const it = getFormCategoryItem(form);
+      const sp = getItemCategory(it) === 'special';
+      return `<span class="px-1.5 py-0.2 rounded ${sp ? 'bg-cyan-400/90' : 'bg-amber-400/90'} text-black text-[8px] font-black ${extraCls || ''}">${sp ? '◆特殊' : '★強化'}</span>`;
+    }
+
     // ===== 作品ロゴ：透明な余白を自動で切り取り、大きさをそろえる =====
     const __logoTrimCache = new Map();
     function getLogoKey(src) { return src ? `${src.length}:${src.slice(-48)}` : ''; }
@@ -4170,7 +4191,10 @@
     function renderDialWidget() {
       const belt = getCurrentDialBelt();
       const w = ensureDialWidget();
-      if (!belt) {
+      // ★強化・◆特殊アイテムを使っているときはダイヤルを出さない（通常のコスモレンズのときだけ表示）
+      const usingPowerOrSpecial = getLoadedItemIds().some(id => { const it = getItemById(id); return Boolean(it && it.isPowerItem); })
+        || (AppState.status === 'HENSHIN' && AppState.activeHenshinFormId && (AppState.forms.find(f => f.id === AppState.activeHenshinFormId) || {}).isPowerForm);
+      if (!belt || usingPowerOrSpecial) {
         w.classList.add('hidden');
         if (dom.normalSlotsWrapper) { dom.normalSlotsWrapper.style.visibility = ''; dom.normalSlotsWrapper.style.pointerEvents = 'auto'; }
         return;
@@ -6152,7 +6176,7 @@
                 ${isShowingOnStage
                   ? `<span class="px-1.5 py-0.2 rounded-full bg-amber-400 text-black text-[8px] font-black shadow shrink-0">上部表示中</span>`
                   : form.isPowerForm
-                  ? `<span class="px-1.5 py-0.2 rounded bg-amber-400/90 text-black text-[8px] font-black shrink-0">★強化</span>`
+                  ? buildFormCategoryBadge(form, 'shrink-0')
                   : ''
                 }
               </div>
@@ -6211,7 +6235,7 @@
               ${isShowingOnStage
                 ? `<span class="px-1.5 py-0.2 rounded-full bg-amber-400 text-black text-[8px] font-black shadow">上部表示中</span>`
                 : form.isPowerForm
-                ? `<span class="px-1.5 py-0.2 rounded bg-amber-400/90 text-black text-[8px] font-black">★強化</span>`
+                ? buildFormCategoryBadge(form, '')
                 : `<span class="text-[8px] text-[#9c8c74]">タップで上部表示</span>`
               }
             </div>
@@ -6552,7 +6576,9 @@
             badgeHtml = `<span class="absolute top-0 left-0 px-1.5 py-0.2 text-[8px] font-scifi text-black rounded-br font-black shadow" style="background-color: ${AppState.activeSlotMode === 'single' ? '#22d3ee' : '#fbbf24'};">${slotLabel}</span>`;
           }
           if (item.isPowerItem) {
-            badgeHtml += `<span class="absolute top-0 right-0 px-1.5 py-0.2 text-[8px] bg-amber-400 text-black rounded-bl font-black">★1個/強化</span>`;
+            badgeHtml += getItemCategory(item) === 'special'
+              ? `<span class="absolute top-0 right-0 px-1.5 py-0.2 text-[8px] bg-cyan-400 text-black rounded-bl font-black">◆1個/特殊</span>`
+              : `<span class="absolute top-0 right-0 px-1.5 py-0.2 text-[8px] bg-amber-400 text-black rounded-bl font-black">★1個/強化</span>`;
           } else if (isSingleType) {
             badgeHtml += `<span class="absolute top-0 right-0 px-1.5 py-0.2 text-[8px] bg-cyan-400 text-black rounded-bl font-black">1個変身</span>`;
           } else if (isBothType) {
@@ -7080,7 +7106,7 @@
       for (let i = 0; i < maxSlots; i++) {
         const it = getItemById(AppState.slotItemIds[i]);
         if (it) {
-          loadedNames.push(it.isPowerItem ? `★${it.name || '強化'}` : (it.name || 'アイテム'));
+          loadedNames.push(it.isPowerItem ? `${getItemCategoryMark(it)}${it.name || getItemCategoryName(it)}` : (it.name || 'アイテム'));
         } else {
           loadedNames.push('未装填');
         }
@@ -7247,7 +7273,7 @@
         const names = loadedIds.map(id => {
           const it = getItemById(id);
           if (!it) return '?';
-          return it.isPowerItem ? `★${it.name || '強化アイテム'}` : (it.name || '通常アイテム');
+          return it.isPowerItem ? `${getItemCategoryMark(it)}${it.name || (getItemCategoryName(it) + 'アイテム')}` : (it.name || '通常アイテム');
         });
         const comboLabel = `${riderLabel} × [${names.join(' ＋ ')}]`;
 
@@ -7868,7 +7894,7 @@
 
         const formatItemLabel = (i) => {
           const baseName = i.name || '名称未設定アイテム';
-          return i.isPowerItem ? `★ [強化] ${baseName}` : baseName;
+          return i.isPowerItem ? `${getItemCategoryMark(i)} [${getItemCategoryName(i)}] ${baseName}` : baseName;
         };
 
         const seriesOptionsHtml = AppState.seriesList.map(s =>
@@ -8633,7 +8659,7 @@
         emptyDiv.className = 'stone-carved p-6 rounded-xl text-center space-y-2 border border-dashed border-amber-500/40';
         emptyDiv.innerHTML = `
           <div class="text-xs font-bold text-amber-200">条件に一致する変身アイテムがありません</div>
-          <div class="text-[10px] text-[#9c8c74]">上の「通常アイテム追加」または「強化アイテム追加」からアイテムを追加してください！</div>
+          <div class="text-[10px] text-[#9c8c74]">上の「通常アイテム追加」「強化アイテム追加」「特殊アイテム追加」からアイテムを追加してください！</div>
         `;
         dom.itemListArea.appendChild(emptyDiv);
         return;
@@ -8734,7 +8760,7 @@
                       ? 'bg-emerald-400 text-black'
                       : 'bg-orange-500 text-white'
                   }">
-                    ${item.isPowerItem ? '★強化 (1個変身)' : getItemUsageMode(item) === 'single' ? '1個で変身' : getItemUsageMode(item) === 'both' ? '1個/2個両用' : '2つ選んで変身'}
+                    ${item.isPowerItem ? `${getItemCategoryMark(item)}${getItemCategoryName(item)} (1個変身)` : getItemUsageMode(item) === 'single' ? '1個で変身' : getItemUsageMode(item) === 'both' ? '1個/2個両用' : '2つ選んで変身'}
                   </span>
                   <div class="inline-flex items-center rounded bg-[#14110d] p-0.5 border border-[#4a3e30] gap-0.5">
                     <button type="button" class="px-1.5 py-0.5 rounded text-[8.5px] font-bold transition btn-set-item-usage" data-id="${item.id}" data-mode="single" style="${(item.usageMode === 'single' || (!item.usageMode && getItemUsageMode(item) === 'single')) ? 'background:#22d3ee;color:#000;font-weight:900;' : 'color:#9c8c74;'}">1個変身</button>
@@ -8761,11 +8787,13 @@
                   <i class="fa-solid fa-crop-simple mr-0.5"></i>中央・同サイズ修整
                 </button>
               ` : ''}
-              <button class="px-2 py-1 rounded text-[10px] font-bold border ${
-                item.isPowerItem ? 'border-amber-400 text-amber-300 bg-amber-950/50' : 'border-[#4a3e30] text-[#9c8c74] bg-[#1a1612]'
-              } btn-toggle-power" data-id="${item.id}">
-                ${item.isPowerItem ? '★強化枠ON' : '強化アイテムにする'}
-              </button>
+              <select class="px-1.5 py-1 rounded text-[10px] font-bold border ${
+                getItemCategory(item) === 'special' ? 'border-cyan-400 text-cyan-200 bg-cyan-950/50' : item.isPowerItem ? 'border-amber-400 text-amber-300 bg-amber-950/50' : 'border-[#4a3e30] text-[#c8b69c] bg-[#1a1612]'
+              } select-item-category" data-id="${item.id}" title="アイテムの区分">
+                <option value="normal" ${getItemCategory(item) === 'normal' ? 'selected' : ''}>区分: 通常</option>
+                <option value="power" ${getItemCategory(item) === 'power' ? 'selected' : ''}>区分: ★強化</option>
+                <option value="special" ${getItemCategory(item) === 'special' ? 'selected' : ''}>区分: ◆特殊</option>
+              </select>
               <label class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-[10px] rounded cursor-pointer transition">
                 ${hasItemImg ? '画像変更' : '＋ 画像を追加'}
                 <input type="file" accept="image/*" class="hidden file-upload-item-only" data-id="${item.id}">
@@ -9101,6 +9129,18 @@
             renderModalItemList();
             refreshAllUI();
           }
+        });
+      });
+
+      document.querySelectorAll('.select-item-category').forEach(sel => {
+        sel.addEventListener('change', async () => {
+          const it = getItemById(sel.dataset.id);
+          if (!it) return;
+          it.isPowerItem = sel.value !== 'normal';
+          it.isSpecialItem = sel.value === 'special';
+          await saveCurrentData();
+          renderAllModalContents();
+          refreshAllUI();
         });
       });
 
@@ -11317,6 +11357,34 @@
         refreshAllUI();
         scrollModalToTop();
       });
+
+      const btnAddSpecialItem = document.getElementById('btnAddSpecialItem');
+      if (btnAddSpecialItem) {
+        btnAddSpecialItem.addEventListener('click', async () => {
+          const targetSeriesId = (AppState.editingSeriesId && AppState.editingSeriesId !== 'all') ? AppState.editingSeriesId : AppState.currentSeriesId;
+          const defaultRiderIds = getDefaultRiderIdsForNewItem(targetSeriesId);
+          const defaultBeltIds = getDefaultBeltIdsForNewItem(targetSeriesId);
+          AppState.items.unshift({
+            id: 'item_special_' + Date.now(),
+            seriesId: targetSeriesId,
+            riderId: defaultRiderIds[0] || '',
+            riderIds: defaultRiderIds,
+            beltId: defaultBeltIds[0] || '',
+            beltIds: defaultBeltIds,
+            name: '',
+            isPowerItem: true,
+            isSpecialItem: true,
+            imgItem: '',
+            scale: 100,
+            offsetX: 0,
+            offsetY: 0
+          });
+          await saveCurrentData();
+          renderAllModalContents();
+          refreshAllUI();
+          scrollModalToTop();
+        });
+      }
 
       const btnNormalizeAllBelts = document.getElementById('btnNormalizeAllBelts');
       if (btnNormalizeAllBelts) {
