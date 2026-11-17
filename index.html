@@ -4084,8 +4084,8 @@
       w.style.touchAction = 'none';
       w.innerHTML = `
         <img src="${DIAL_BASE_IMG}" class="absolute inset-0 w-full h-full pointer-events-none" draggable="false" alt="">
-        <div class="dial-center-item hidden absolute pointer-events-none flex items-center justify-center" style="left:50%;top:50%;width:50%;height:50%;transform:translate(-50%,-50%);">
-          <img class="dial-center-img w-full h-full object-contain hidden" draggable="false" alt="" style="filter:drop-shadow(0 4px 10px rgba(0,0,0,.7));">
+        <div class="dial-center-item hidden absolute pointer-events-none flex items-center justify-center" style="left:50%;top:50%;width:46%;height:46%;transform:translate(-50%,-50%);border-radius:50%;overflow:hidden;box-shadow:inset 0 0 10px rgba(0,0,0,.6);">
+          <img class="dial-center-img hidden absolute object-contain" draggable="false" alt="" style="left:50%;top:50%;max-width:none;">
           <span class="dial-center-name hidden text-center font-black text-amber-100 px-1" style="text-shadow:0 1px 3px #000;"></span>
         </div>
         <div class="dial-ring absolute inset-0 pointer-events-none" style="transition: transform 160ms ease-out;">
@@ -4201,7 +4201,17 @@
         const it = dialIsMain ? getItemById(loadedForDial[0]) : null;
         centerBox.classList.toggle('hidden', !it);
         const hasImg = Boolean(it && it.imgItem && it.imgItem.trim() !== '');
-        if (centerImg) { centerImg.classList.toggle('hidden', !hasImg); if (hasImg && centerImg.getAttribute('src') !== it.imgItem) centerImg.src = it.imgItem; }
+        if (centerImg) {
+          centerImg.classList.toggle('hidden', !hasImg);
+          if (hasImg && centerImg.getAttribute('src') !== it.imgItem) centerImg.src = it.imgItem;
+          // レンズ画像の「星座の部分」だけが中央の玉にかぶるよう拡大・位置合わせ（ベルト設定で調整可）
+          const z = Number(belt.dialLensZoom) || 230;
+          const lx = Number.isFinite(Number(belt.dialLensX)) ? Number(belt.dialLensX) : 0;
+          const ly = Number.isFinite(Number(belt.dialLensY)) ? Number(belt.dialLensY) : 10;
+          centerImg.style.width = `${z}%`;
+          centerImg.style.height = `${z}%`;
+          centerImg.style.transform = `translate(calc(-50% + ${-lx}%), calc(-50% + ${-ly}%))`;
+        }
         if (centerName) {
           centerName.classList.toggle('hidden', !it || hasImg);
           centerName.textContent = it ? (it.name || '') : '';
@@ -9713,6 +9723,12 @@
                       <label>左右 <span class="lbl-belt-dial-dialX" data-id="${belt.id}">${Number.isFinite(Number(belt.dialX)) ? Number(belt.dialX) : 0}px</span><input type="range" min="-180" max="180" value="${Number.isFinite(Number(belt.dialX)) ? Number(belt.dialX) : 0}" class="w-full accent-yellow-400 input-belt-dial" data-key="dialX" data-id="${belt.id}"></label>
                       <label>上下 <span class="lbl-belt-dial-dialY" data-id="${belt.id}">${Number.isFinite(Number(belt.dialY)) ? Number(belt.dialY) : 0}px</span><input type="range" min="-150" max="150" value="${Number.isFinite(Number(belt.dialY)) ? Number(belt.dialY) : 0}" class="w-full accent-yellow-400 input-belt-dial" data-key="dialY" data-id="${belt.id}"></label>
                     </div>
+                    <div class="text-[9px] text-yellow-200 font-bold pt-1">アイテムセット時：中央にかぶせる星座部分の合わせ方</div>
+                    <div class="grid grid-cols-3 gap-2 text-[9px] text-[#c8b69c]">
+                      <label>拡大 <span class="lbl-belt-dial-dialLensZoom" data-id="${belt.id}">${Number(belt.dialLensZoom) || 230}%</span><input type="range" min="80" max="320" value="${Number(belt.dialLensZoom) || 230}" class="w-full accent-yellow-400 input-belt-dial" data-key="dialLensZoom" data-unit="%" data-id="${belt.id}"></label>
+                      <label>左右 <span class="lbl-belt-dial-dialLensX" data-id="${belt.id}">${Number.isFinite(Number(belt.dialLensX)) ? Number(belt.dialLensX) : 0}%</span><input type="range" min="-40" max="40" value="${Number.isFinite(Number(belt.dialLensX)) ? Number(belt.dialLensX) : 0}" class="w-full accent-yellow-400 input-belt-dial" data-key="dialLensX" data-unit="%" data-id="${belt.id}"></label>
+                      <label>上下 <span class="lbl-belt-dial-dialLensY" data-id="${belt.id}">${Number.isFinite(Number(belt.dialLensY)) ? Number(belt.dialLensY) : 10}%</span><input type="range" min="-40" max="40" value="${Number.isFinite(Number(belt.dialLensY)) ? Number(belt.dialLensY) : 10}" class="w-full accent-yellow-400 input-belt-dial" data-key="dialLensY" data-unit="%" data-id="${belt.id}"></label>
+                    </div>
                     <button type="button" class="w-full px-2 py-1 rounded bg-[#241e18] border border-yellow-400/50 text-[10px] font-bold text-yellow-200 btn-belt-dial-center" data-id="${belt.id}">スロットを囲む中央配置にする（大きさ280・左右0・上下0）</button>
                     <button type="button" class="w-full px-2 py-1 rounded bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-400/60 text-[10px] font-bold text-yellow-100 btn-belt-dial-bulk" data-id="${belt.id}">
                       このベルトのアイテム × 十二支のフォームを一括作成（足りない分だけ）
@@ -9910,7 +9926,7 @@
           if (!b) return;
           b[inp.dataset.key] = Number(inp.value);
           const lbl = document.querySelector(`.lbl-belt-dial-${inp.dataset.key}[data-id="${b.id}"]`) || document.querySelector(`.lbl-belt-dial-size[data-id="${b.id}"]`);
-          if (lbl && (inp.dataset.key !== 'dialSize' || lbl.classList.contains('lbl-belt-dial-size'))) lbl.textContent = `${inp.value}px`;
+          if (lbl && (inp.dataset.key !== 'dialSize' || lbl.classList.contains('lbl-belt-dial-size'))) lbl.textContent = `${inp.value}${inp.dataset.unit || 'px'}`;
           renderDialWidget();
           clearTimeout(b.__dialSaveT);
           b.__dialSaveT = setTimeout(async () => { delete b.__dialSaveT; await saveCurrentData(); }, 200);
