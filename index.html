@@ -4133,20 +4133,66 @@
       __logoTrimCache.set(key, p);
       p.then(v => { __logoTrimCache.set(key, v); if (onDone) onDone(v); });
     }
+    // ロゴの微調整（自動でそろえたあとの倍率）。旧版の logoScale は使わない
     function getLogoScale(series) {
-      const v = Number(series && series.logoScale);
+      const v = Number(series && series.logoSizeAdj);
       return Number.isFinite(v) && v > 0 ? v : 100;
+    }
+    const __logoAspectCache = new Map();
+    function getLogoAspect(src, cb) {
+      if (!src) return;
+      const k = getLogoKey(src);
+      if (__logoAspectCache.has(k)) { cb(__logoAspectCache.get(k)); return; }
+      const im = new Image();
+      im.onload = () => { const a = im.naturalHeight ? im.naturalWidth / im.naturalHeight : 3; __logoAspectCache.set(k, a); cb(a); };
+      im.src = src;
+    }
+    // 横長でも縦長でも「見た目の面積」が同じになる高さを計算
+    function getAutoLogoSize(aspect, sc, area = 4600, minH = 24, maxH = 54) {
+      const a = Math.max(0.5, Math.min(8, aspect || 3));
+      const h = Math.max(minH, Math.min(maxH, Math.sqrt(area / a))) * sc;
+      return { h: Math.round(h), w: Math.round(h * a) };
     }
     function applyHeaderLogo(series) {
       const el = dom.imgHeaderSeriesLogo;
       if (!el || !series || !series.imgLogo) return;
       const sc = getLogoScale(series) / 100;
-      el.style.height = `${Math.round(34 * sc)}px`;
-      el.style.maxWidth = `${Math.round(170 * sc)}px`;
+      const fit = (src) => {
+        getLogoAspect(src, (a) => {
+          const cur = getCurrentSeries();
+          if (!cur || cur.id !== series.id) return;
+          const sz = getAutoLogoSize(a, sc);
+          el.style.height = `${sz.h}px`;
+          el.style.maxWidth = `${Math.max(sz.w, 40)}px`;
+          el.style.width = 'auto';
+        });
+      };
       el.src = getTrimmedLogo(series.imgLogo);
+      fit(el.src);
       requestTrimLogo(series.imgLogo, (t) => {
         const cur = getCurrentSeries();
-        if (cur && cur.id === series.id) el.src = t;
+        if (cur && cur.id === series.id) { el.src = t; fit(t); }
+      });
+    }
+
+    // 作品選択・設定のロゴも、面積がそろうよう大きさを決める
+    function fitAllLogoImgs() {
+      document.querySelectorAll('img[data-logo-series]').forEach(im => {
+        const sr = AppState.seriesList.find(x => x.id === im.dataset.logoSeries);
+        if (!sr || !sr.imgLogo) return;
+        const box = im.parentElement;
+        const apply = (src) => getLogoAspect(src, (a) => {
+          const bh = box ? box.clientHeight : 90;
+          const bw = box ? box.clientWidth : 260;
+          const area = (bw * bh) * 0.16;
+          const sz = getAutoLogoSize(a, getLogoScale(sr) / 100, area, bh * 0.3, bh * 0.85);
+          let w = sz.w, h = sz.h;
+          if (w > bw * 0.92) { h = h * (bw * 0.92) / w; w = bw * 0.92; }
+          im.style.maxHeight = 'none'; im.style.maxWidth = 'none';
+          im.style.height = `${Math.round(h)}px`; im.style.width = `${Math.round(w)}px`;
+        });
+        apply(im.src);
+        requestTrimLogo(sr.imgLogo, t => { im.src = t; apply(t); });
       });
     }
 
@@ -4186,7 +4232,8 @@
 
     function ensureDialWidget() {
       let w = document.getElementById('dialWidget');
-      if (w) return w;
+      if (w && w.__dialWired) return w;
+      if (w) w.remove(); // 書き出したHTMLに残った「絵だけのダイヤル」は作り直す
       w = document.createElement('div');
       w.id = 'dialWidget';
       w.className = 'hidden absolute z-10 select-none';
@@ -4255,6 +4302,7 @@
       };
       w.addEventListener('pointerup', end);
       w.addEventListener('pointercancel', end);
+      w.__dialWired = true;
       const host = document.getElementById('driverContainer');
       if (host) host.appendChild(w);
       return w;
@@ -5496,12 +5544,7 @@
     }
 
     function renderSeriesSelectorModal() {
-      setTimeout(() => {
-        document.querySelectorAll('img[data-logo-series]').forEach(im => {
-          const sr = AppState.seriesList.find(x => x.id === im.dataset.logoSeries);
-          if (sr && sr.imgLogo) requestTrimLogo(sr.imgLogo, t => { im.src = t; });
-        });
-      }, 0);
+      setTimeout(() => { fitAllLogoImgs(); }, 0);
       if (!dom.seriesVerticalList) return;
       dom.seriesVerticalList.innerHTML = '';
 
@@ -7571,9 +7614,9 @@
               </div>
               ${hasLogo ? `
                 <div class="w-full mt-2 text-[9px] text-[#c8b69c]">
-                  <div class="flex justify-between"><span>ロゴの大きさ（他の作品とそろえる用）</span><span class="lbl-series-logo-scale" data-id="${s.id}">${getLogoScale(s)}%</span></div>
+                  <div class="flex justify-between"><span>ロゴの大きさの微調整（自動でそろえた後に、さらに大きく/小さく）</span><span class="lbl-series-logo-scale" data-id="${s.id}">${getLogoScale(s)}%</span></div>
                   <input type="range" min="50" max="160" value="${getLogoScale(s)}" class="w-full accent-amber-400 input-series-logo-scale" data-id="${s.id}">
-                  <div class="text-[8.5px] text-[#8c7c68]">※ロゴ画像の透明な余白は自動で切り取ってそろえています</div>
+                  <div class="text-[8.5px] text-[#8c7c68]">※透明な余白を切り取り、横長・縦長に関係なく見た目の大きさがそろうよう自動調整しています（通常は100%のままでOK）</div>
                 </div>
               ` : ''}
             </div>
@@ -7794,24 +7837,18 @@
         inp.addEventListener('input', () => {
           const sr = AppState.seriesList.find(x => x.id === inp.dataset.id);
           if (!sr) return;
-          sr.logoScale = Number(inp.value);
+          sr.logoSizeAdj = Number(inp.value);
           const lbl = document.querySelector(`.lbl-series-logo-scale[data-id="${sr.id}"]`);
           if (lbl) lbl.textContent = `${inp.value}%`;
-          document.querySelectorAll(`img[data-logo-series="${sr.id}"]`).forEach(im => {
-            im.style.maxHeight = `${Math.min(100, 72 * sr.logoScale / 100)}%`;
-            im.style.maxWidth = `${Math.min(100, 85 * sr.logoScale / 100)}%`;
-          });
+          fitAllLogoImgs();
           const cur = getCurrentSeries();
           if (cur && cur.id === sr.id) applyHeaderLogo(sr);
           clearTimeout(sr.__logoSaveT);
           sr.__logoSaveT = setTimeout(async () => { delete sr.__logoSaveT; await saveCurrentData(); }, 200);
         });
       });
-      // 透明余白の切り取りが終わったらプレビューを差し替え
-      document.querySelectorAll('img[data-logo-series]').forEach(im => {
-        const sr = AppState.seriesList.find(x => x.id === im.dataset.logoSeries);
-        if (sr && sr.imgLogo) requestTrimLogo(sr.imgLogo, t => { im.src = t; });
-      });
+      // 透明余白の切り取り＆大きさそろえ
+      fitAllLogoImgs();
 
       document.querySelectorAll('.file-upload-series-logo').forEach(inp => {
         inp.addEventListener('change', async (e) => {
