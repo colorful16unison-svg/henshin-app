@@ -4211,6 +4211,12 @@
     }
     function getDialIndex() { return getDialPos() - 1; } // -1 は「干支」（未選択）
     function getDialLabel(pos) { return pos === 0 ? '干支' : ETO_KANJI[pos - 1]; }
+    // 十二支ダイヤルのフォームに使われているアイテムか（＝12星座のコスモレンズ）
+    function isDialItem(itemId) {
+      const it = getItemById(itemId);
+      if (!it || it.isPowerItem) return false;
+      return AppState.forms.some(f => formHasDial(f) && getFormConfiguredItems(f).includes(itemId));
+    }
     function formHasDial(f) { return Boolean(f) && Number.isInteger(f.dialIndex) && f.dialIndex >= 0 && f.dialIndex < 12; }
 
     function afterDialChanged() {
@@ -4327,10 +4333,12 @@
     function renderDialWidget() {
       const belt = getCurrentDialBelt();
       const w = ensureDialWidget();
-      // ★強化・◆特殊アイテムを使っているときはダイヤルを出さない（通常のコスモレンズのときだけ表示）
-      const usingPowerOrSpecial = getLoadedItemIds().some(id => { const it = getItemById(id); return Boolean(it && it.isPowerItem); })
-        || (AppState.status === 'HENSHIN' && AppState.activeHenshinFormId && (AppState.forms.find(f => f.id === AppState.activeHenshinFormId) || {}).isPowerForm);
-      if (!belt || usingPowerOrSpecial) {
+      // ★ダイヤルは「十二支ダイヤルのフォームを持つアイテム」（12星座のコスモレンズ）をセットした時だけ表示
+      const loadedNowIds = getLoadedItemIds();
+      const activeForm = (AppState.status === 'HENSHIN' && AppState.activeHenshinFormId) ? AppState.forms.find(f => f.id === AppState.activeHenshinFormId) : null;
+      const dialItemSet = loadedNowIds.length > 0 && loadedNowIds.every(id => isDialItem(id));
+      const showDial = activeForm ? formHasDial(activeForm) : dialItemSet;
+      if (!belt || !showDial) {
         w.classList.add('hidden');
         if (dom.normalSlotsWrapper) { dom.normalSlotsWrapper.style.visibility = ''; dom.normalSlotsWrapper.style.pointerEvents = 'auto'; }
         return;
@@ -5395,7 +5403,9 @@
       const rider = getCurrentRider();
       syncBeltFromCurrentRider();
       if (rider) {
-        dom.hudRiderName.textContent = getRiderDisplayName(rider, 'ライダー名称未設定');
+        const henshinForm = (AppState.status === 'HENSHIN' && AppState.activeHenshinFormId) ? AppState.forms.find(f => f.id === AppState.activeHenshinFormId) : null;
+        const shownRider = (henshinForm && AppState.riders.find(r => r.id === henshinForm.riderId)) || rider;
+        dom.hudRiderName.textContent = getRiderDisplayName(shownRider, 'ライダー名称未設定');
         if (AppState.status === 'IDLE') {
           applyTheme(
             rider.themeColor || (series ? series.themeColor : '#f97316'),
@@ -7390,7 +7400,10 @@
         void dom.riderResultArea.offsetWidth;
         dom.riderResultArea.classList.add('animate-rider-cutin');
 
-        const riderTitle = rider ? rider.name : '';
+        // 変身したフォームの持ち主のライダー名を出す（全表示で他のライダーのアイテムを使った場合も）
+        const henshinRider = AppState.riders.find(r => r.id === matchedForm.riderId) || rider;
+        if (henshinRider) dom.hudRiderName.textContent = getRiderDisplayName(henshinRider, 'ライダー名称未設定');
+        const riderTitle = henshinRider ? getRiderDisplayName(henshinRider) : '';
         dom.actionHint.textContent = `★ ${riderTitle} ${matchedForm.formName || ''} 変身完了！（右上「位置調整」で写真位置も微調整可） ★`;
       } else {
         applyTheme('#dc2626', '#7f1d1d');
@@ -12320,7 +12333,8 @@
         let resume = false;
         try {
           const last = Number(localStorage.getItem('HENSHIN_APP_LAST_ACTIVE') || 0);
-          resume = !window.__SAVE_LOAD_FAILED__ && last > 0 && (Date.now() - last) < 30 * 60 * 1000 && AppState.seriesList.some(x => x.id === AppState.currentSeriesId);
+          // 起動時は必ず作品選択から始める（前回の作品へ自動で飛ばない）
+          resume = false && last > 0;
         } catch (e) {}
         if (resume) {
           const curSeries = AppState.seriesList.find(x => x.id === AppState.currentSeriesId);
