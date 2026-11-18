@@ -1184,8 +1184,9 @@
               <div class="text-[11px] font-bold text-sky-200"><i class="fa-solid fa-images mr-1"></i>ライダー画像の一括取り込み（いま表示中のフォームが対象）</div>
               <div class="flex flex-wrap items-center gap-2 text-[10px] text-[#c8b69c]">
                 <select id="selectBulkRiderMode" class="bg-[#1c1814] border border-sky-400/60 rounded px-2 py-1 text-[10px] text-sky-100 font-bold">
-                  <option value="name">ファイル名で自動判定（フォーム名 / アイテム名＋干支）</option>
-                  <option value="order">ファイル名の順番で、一覧の上から順に割り当て</option>
+                  <option value="name">候補をファイル名から自動で入れる（あとで手で直せます）</option>
+                  <option value="order">候補をファイル名の順番で入れる（あとで手で直せます）</option>
+                  <option value="none">候補なし（すべて手で選ぶ）</option>
                 </select>
                 <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="chkBulkRiderOnlyEmpty" class="accent-sky-400" checked>画像がないフォームだけ</label>
                 <label class="px-3 py-1 rounded bg-sky-500 hover:bg-sky-400 text-black font-bold cursor-pointer">
@@ -1194,6 +1195,7 @@
                 </label>
               </div>
               <div id="lblBulkRiderStatus" class="text-[9.5px] text-sky-200/90 whitespace-pre-line"></div>
+              <div id="bulkRiderReview" class="hidden"></div>
               <div class="flex items-center justify-between gap-2 border-t border-[#2e261d] pt-2">
                 <span class="text-[10px] text-[#9c8c74]">画像を入れたら、名前を上から順に入力できます</span>
                 <button type="button" id="btnToggleFormNameQuick" class="px-3 py-1 rounded bg-[#241e18] border border-sky-400/60 text-sky-200 text-[10px] font-bold">フォーム名の連続入力画面</button>
@@ -7921,7 +7923,7 @@
       const list = [...files].sort((x, y) => x.name.localeCompare(y.name, 'ja', { numeric: true }));
       let targets = getFilteredFormsForModal().slice();
       if (onlyEmpty) targets = targets.filter(f => !(f.imgRider && f.imgRider.trim() !== ''));
-      if (!targets.length) { if (lbl) lbl.textContent = '対象のフォームがありません（絞り込みや「画像がないフォームだけ」を確認してください）'; return; }
+      if (!getFilteredFormsForModal().length) { if (lbl) lbl.textContent = '対象のフォームがありません（作品・ライダーの絞り込みを確認してください）'; return; }
       const assign = [];
       const unmatched = [];
       if (mode === 'order') {
@@ -7940,30 +7942,114 @@
           else unmatched.push(file.name + (tie ? '（候補が複数）' : ''));
         });
       }
-      let done = 0;
-      for (const a of assign) {
-        try {
-          a.form.imgRider = await compressImageFile(a.file, 800, 0.85);
-          a.form.colorManuallyEdited = false;
-          await applyAutoColorFromFormImage(a.form);
-        } catch (e) { unmatched.push(a.file.name + '（読み込み失敗）'); }
-        done++;
-        if (lbl) lbl.textContent = `取り込み中… ${done} / ${assign.length}`;
-      }
-      if (lbl) lbl.textContent = `大きさをそろえています…`;
-      try { await normalizeAllRiderImagesToMedianInState(); } catch (e) {}
-      await saveCurrentData();
-      renderAllModalContents();
-      refreshAllUI();
-      const l2 = document.getElementById('lblBulkRiderStatus');
-      if (l2) l2.textContent = `✔ ${assign.length}枚を取り込みました。` + (unmatched.length ? `\n対応するフォームが見つからなかった画像（${unmatched.length}枚）:\n` + unmatched.slice(0, 30).join('\n') + (unmatched.length > 30 ? '\n…' : '') : '');
+      if (mode === 'none') { assign.length = 0; }
+      renderBulkRiderReview(list, assign, getFilteredFormsForModal().slice());
+    }
+
+    function getFormPickLabel(f, i) {
+      const items = getFormConfiguredItems(f).map(id => (getItemById(id) || {}).name || '').filter(Boolean).join('×');
+      const eto = formHasDial(f) ? `【${ETO_KANJI[f.dialIndex]}】` : '';
+      const has = (f.imgRider && f.imgRider.trim() !== '') ? ' ●画像あり' : '';
+      return `${i + 1}. ${eto}${items || 'アイテム未設定'}${f.formName ? ' / ' + f.formName : ''}${has}`;
+    }
+
+    // 画像ごとに、どのフォームに入れるかを手で選べる確認画面
+    function renderBulkRiderReview(files, assign, allForms) {
+      const box = document.getElementById('bulkRiderReview');
+      const lbl = document.getElementById('lblBulkRiderStatus');
+      if (!box) return;
+      (window.__bulkReviewUrls || []).forEach(u => URL.revokeObjectURL(u));
+      window.__bulkReviewUrls = [];
+      const pre = new Map(assign.map(a => [a.file, a.form.id]));
+      const optionsHtml = ['<option value="">― 入れない ―</option>']
+        .concat(allForms.map((f, i) => `<option value="${f.id}">${getFormPickLabel(f, i).replace(/</g, '&lt;')}</option>`)).join('');
+      box.innerHTML = `
+        <div class="text-[10px] text-sky-200 font-bold mb-1">画像ごとに入れるフォームを選んでください（${files.length}枚）</div>
+        <div class="flex flex-wrap gap-1.5 mb-1.5">
+          <button type="button" class="px-2 py-0.5 rounded bg-[#241e18] border border-sky-400/60 text-sky-200 text-[9.5px] font-bold btn-bulk-fill-order">空いている欄を一覧の上から順に埋める</button>
+          <button type="button" class="px-2 py-0.5 rounded bg-[#241e18] border border-[#4a3e30] text-[#c8b69c] text-[9.5px] font-bold btn-bulk-clear-all">全部「入れない」にする</button>
+        </div>
+        <div class="space-y-1 max-h-[55vh] overflow-y-auto pr-1 bulk-review-list"></div>
+        <div class="text-[9.5px] text-red-300 mt-1 bulk-review-warn"></div>
+        <div class="flex gap-2 mt-1.5">
+          <button type="button" class="flex-1 px-3 py-1.5 rounded bg-sky-500 hover:bg-sky-400 text-black font-bold text-[11px] btn-bulk-apply">この内容で取り込む</button>
+          <button type="button" class="px-3 py-1.5 rounded bg-[#241e18] border border-[#4a3e30] text-[#c8b69c] text-[11px] btn-bulk-cancel">やめる</button>
+        </div>`;
+      const listEl = box.querySelector('.bulk-review-list');
+      files.forEach((file, i) => {
+        const url = URL.createObjectURL(file);
+        window.__bulkReviewUrls.push(url);
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2 p-1 rounded bg-[#1c1814] border border-[#2e261d] bulk-review-row';
+        row.innerHTML = `
+          <img src="${url}" class="w-11 h-14 object-contain rounded bg-black/60 shrink-0" alt="">
+          <div class="flex-1 min-w-0">
+            <div class="text-[9px] text-[#9c8c74] truncate">${file.name.replace(/</g, '&lt;')}</div>
+            <select class="w-full mt-0.5 bg-[#14110d] border border-[#4a3e30] rounded px-1 py-1 text-[10.5px] text-amber-100 select-bulk-target" data-idx="${i}">${optionsHtml}</select>
+          </div>`;
+        listEl.appendChild(row);
+        row.querySelector('select').value = pre.get(file) || '';
+      });
+      const selects = [...box.querySelectorAll('.select-bulk-target')];
+      const checkDup = () => {
+        const counts = {};
+        selects.forEach(sel => { if (sel.value) counts[sel.value] = (counts[sel.value] || 0) + 1; });
+        let dup = 0;
+        selects.forEach(sel => {
+          const isDup = sel.value && counts[sel.value] > 1;
+          if (isDup) dup++;
+          sel.style.borderColor = isDup ? '#f87171' : (sel.value ? '#38bdf8' : '');
+        });
+        const n = selects.filter(x => x.value).length;
+        const w = box.querySelector('.bulk-review-warn');
+        if (w) w.textContent = dup ? `※同じフォームが複数の画像で選ばれています（赤枠）。あとの画像で上書きされます。` : '';
+        if (lbl) lbl.textContent = `${n}枚をフォームに割り当て中 / ${selects.length - n}枚は入れない`;
+      };
+      selects.forEach(sel => sel.addEventListener('change', checkDup));
+      checkDup();
+      box.querySelector('.btn-bulk-fill-order').addEventListener('click', () => {
+        const used = new Set(selects.map(x => x.value).filter(Boolean));
+        const free = allForms.filter(f => !used.has(f.id) && !(f.imgRider && f.imgRider.trim() !== ''));
+        selects.forEach(sel => { if (!sel.value && free.length) sel.value = free.shift().id; });
+        checkDup();
+      });
+      box.querySelector('.btn-bulk-clear-all').addEventListener('click', () => { selects.forEach(sel => { sel.value = ''; }); checkDup(); });
+      const close = () => {
+        box.classList.add('hidden'); box.innerHTML = '';
+        (window.__bulkReviewUrls || []).forEach(u => URL.revokeObjectURL(u));
+        window.__bulkReviewUrls = [];
+      };
+      box.querySelector('.btn-bulk-cancel').addEventListener('click', () => { close(); if (lbl) lbl.textContent = '取り込みをやめました'; });
+      box.querySelector('.btn-bulk-apply').addEventListener('click', async () => {
+        const jobs = selects.map(sel => ({ file: files[Number(sel.dataset.idx)], form: AppState.forms.find(f => f.id === sel.value) })).filter(j => j.form);
+        box.querySelectorAll('button,select').forEach(el => { el.disabled = true; });
+        let done = 0; const failed = [];
+        for (const j of jobs) {
+          try {
+            j.form.imgRider = await compressImageFile(j.file, 800, 0.85);
+            j.form.colorManuallyEdited = false;
+            await applyAutoColorFromFormImage(j.form);
+          } catch (e) { failed.push(j.file.name); }
+          done++;
+          if (lbl) lbl.textContent = `取り込み中… ${done} / ${jobs.length}`;
+        }
+        if (lbl) lbl.textContent = '大きさをそろえています…';
+        try { await normalizeAllRiderImagesToMedianInState(); } catch (e) {}
+        await saveCurrentData();
+        close();
+        renderAllModalContents();
+        refreshAllUI();
+        const l2 = document.getElementById('lblBulkRiderStatus');
+        if (l2) l2.textContent = `✔ ${jobs.length - failed.length}枚をフォームに入れました` + (failed.length ? `\n読み込めなかった画像: ${failed.join(', ')}` : '');
+      });
+      box.classList.remove('hidden');
     }
 
     // ===== フォーム名の連続入力画面 =====
     function renderFormNameQuickList(filteredForms) {
       const wrap = document.createElement('div');
       wrap.className = 'stone-carved p-2 rounded-xl space-y-1';
-      wrap.innerHTML = `<div class="text-[10px] text-sky-200 font-bold px-1 pb-1">フォーム名の連続入力（入力して「次へ」/ Enter で下の欄へ。${filteredForms.length}件）</div>`;
+      wrap.innerHTML = `<div class="text-[10px] text-sky-200 font-bold px-1 pb-1">フォーム名の連続入力（入力して「次へ」/ Enter で下の欄へ。写真の枠をタップすると、そのフォームの画像を選び直せます。${filteredForms.length}件）</div>`;
       filteredForms.forEach((f, i) => {
         const items = getFormConfiguredItems(f).map(id => (getItemById(id) || {}).name || '').filter(Boolean).join(' × ');
         const row = document.createElement('div');
@@ -7971,9 +8057,10 @@
         const hasImg = Boolean(f.imgRider && f.imgRider.trim() !== '');
         row.innerHTML = `
           <span class="w-6 text-[9px] text-[#9c8c74] text-right shrink-0">${i + 1}</span>
-          <div class="w-11 h-14 rounded bg-black/60 border border-[#3d3327] overflow-hidden shrink-0 flex items-center justify-center">
-            ${hasImg ? `<img decoding="async" loading="lazy" src="${f.imgRider}" class="w-full h-full object-contain">` : '<span class="text-[8px] text-[#6e5d49]">画像なし</span>'}
-          </div>
+          <label class="w-11 h-14 rounded bg-black/60 border ${hasImg ? 'border-[#3d3327]' : 'border-dashed border-sky-400/60'} overflow-hidden shrink-0 flex items-center justify-center cursor-pointer relative" title="タップでこのフォームの画像を選ぶ">
+            ${hasImg ? `<img decoding="async" loading="lazy" src="${f.imgRider}" class="w-full h-full object-contain">` : '<span class="text-[8px] text-sky-300 text-center leading-tight">＋<br>画像</span>'}
+            <input type="file" accept="image/*" class="hidden file-form-img-quick" data-id="${f.id}">
+          </label>
           <div class="flex-1 min-w-0">
             <div class="text-[9px] text-amber-300/90 truncate">${formHasDial(f) ? `<span class="px-1 rounded bg-yellow-500 text-black font-black mr-1">${ETO_KANJI[f.dialIndex]}</span>` : ''}${items || 'アイテム未設定'}</div>
             <input type="text" enterkeyhint="next" class="w-full mt-0.5 bg-[#1c1814] border border-[#4a3e30] focus:border-sky-400 rounded px-2 py-1 text-xs text-amber-100 input-form-name-quick" data-id="${f.id}" data-idx="${i}" value="${(f.formName || '').replace(/"/g, '&quot;')}" placeholder="フォーム名（空欄でもOK）">
@@ -7981,6 +8068,28 @@
         wrap.appendChild(row);
       });
       dom.formListArea.appendChild(wrap);
+      wrap.querySelectorAll('.file-form-img-quick').forEach(fi => {
+        fi.addEventListener('change', async (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (!file) return;
+          const f = AppState.forms.find(x => x.id === fi.dataset.id);
+          if (!f) return;
+          const box = fi.parentElement;
+          box.style.opacity = '0.5';
+          try {
+            f.imgRider = await compressImageFile(file, 800, 0.85);
+            f.colorManuallyEdited = false;
+            await applyAutoColorFromFormImage(f);
+            await normalizeAllRiderImagesToMedianInState();
+            await saveCurrentData();
+          } catch (err) { console.error(err); }
+          const keepScroll = dom.formListArea.closest('.overflow-y-auto') || document.scrollingElement;
+          const top = keepScroll ? keepScroll.scrollTop : 0;
+          renderModalFormList();
+          if (keepScroll) keepScroll.scrollTop = top;
+          refreshAllUI();
+        });
+      });
       const inputs = [...wrap.querySelectorAll('.input-form-name-quick')];
       inputs.forEach((inp, i) => {
         const commit = async () => {
