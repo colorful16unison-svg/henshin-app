@@ -2226,6 +2226,32 @@
     }
 
     // --- ★ 全ライダー・全ベルト・全アイテムの一括正規化エンジン (V27) ---
+    // ★ 高速版：追加・差し替えした写真だけを、今の基準サイズに合わせる（全写真の作り直しはしない）
+    async function getRiderMedianRef() {
+      if (AppState.riderMedianRef && AppState.riderMedianRef.medianCoreAspect) return AppState.riderMedianRef;
+      const samples = AppState.forms.filter(f => f.imgRider && f.imgRider.trim() !== '' && f.medianNormalizedV27).slice(0, 24);
+      const geoms = [];
+      for (const f of samples) {
+        try { const g = await extractSubjectGeometry(f.imgRider, 'rider'); if (g) geoms.push(g); } catch (e) {}
+      }
+      AppState.riderMedianRef = buildMedianReferenceForGeometries(geoms, 'rider');
+      return AppState.riderMedianRef;
+    }
+    async function normalizeSomeRiderImages(forms) {
+      const list = (forms || []).filter(f => f && f.imgRider && f.imgRider.trim() !== '');
+      if (!list.length) return 0;
+      const ref = await getRiderMedianRef();
+      for (const f of list) {
+        try {
+          const geom = await extractSubjectGeometry(f.imgRider, 'rider');
+          if (geom && geom.found) f.imgRider = renderGeometryToNormalizedDataUrl(geom, 'rider', ref);
+        } catch (e) {}
+        f.riderScale = 100; f.riderOffsetX = 0; f.riderOffsetY = 0;
+        f.riderNormalizedV19 = true; f.medianNormalizedV25 = true; f.medianNormalizedV26 = true; f.medianNormalizedV27 = true;
+      }
+      return list.length;
+    }
+
     async function normalizeAllRiderImagesToMedianInState() {
       const entries = [];
       for (let i = 0; i < AppState.forms.length; i++) {
@@ -2236,6 +2262,7 @@
         }
       }
       const medianRef = buildMedianReferenceForGeometries(entries.map(e => e.geom), 'rider');
+      AppState.riderMedianRef = medianRef;
       for (let i = 0; i < entries.length; i++) {
         const { form, geom } = entries[i];
         if (geom.found) {
@@ -2250,6 +2277,43 @@
         form.medianNormalizedV27 = true;
       }
       return entries.length;
+    }
+
+    // ★ 高速版（ベルト・セット時ベルト・アイテム）：追加・差し替えした画像だけを基準に合わせる
+    async function getMedianRefFor(kind) {
+      const key = kind === 'belt' ? 'beltMedianRef' : 'itemMedianRef';
+      if (AppState[key] && AppState[key].medianCoreAspect) return AppState[key];
+      const srcs = kind === 'belt'
+        ? AppState.belts.filter(b => b.imgBelt && b.medianNormalizedV27).map(b => b.imgBelt)
+            .concat(AppState.forms.filter(f => f.imgSlottedBelt && f.beltMedianNormalizedV27).map(f => f.imgSlottedBelt))
+        : AppState.items.filter(it => it.imgItem && it.medianNormalizedV27).map(it => it.imgItem);
+      const geoms = [];
+      for (const src of srcs.slice(0, 24)) {
+        try { const g = await extractSubjectGeometry(src, kind); if (g) geoms.push(g); } catch (e) {}
+      }
+      AppState[key] = buildMedianReferenceForGeometries(geoms, kind);
+      return AppState[key];
+    }
+    async function normalizeOneBeltImage(belt) {
+      if (!belt || !belt.imgBelt) return;
+      const ref = await getMedianRefFor('belt');
+      try { const g = await extractSubjectGeometry(belt.imgBelt, 'belt'); if (g && g.found) belt.imgBelt = renderGeometryToNormalizedDataUrl(g, 'belt', ref); } catch (e) {}
+      belt.scale = 100; belt.offsetX = 0; belt.offsetY = 0;
+      belt.beltNormalizedV22 = true; belt.medianNormalizedV25 = true; belt.medianNormalizedV26 = true; belt.medianNormalizedV27 = true;
+    }
+    async function normalizeOneFormBeltImage(form) {
+      if (!form || !form.imgSlottedBelt) return;
+      const ref = await getMedianRefFor('belt');
+      try { const g = await extractSubjectGeometry(form.imgSlottedBelt, 'belt'); if (g && g.found) form.imgSlottedBelt = renderGeometryToNormalizedDataUrl(g, 'belt', ref); } catch (e) {}
+      form.beltScale = 100; form.beltOffsetX = 0; form.beltOffsetY = 0;
+      form.beltNormalizedV22 = true; form.beltMedianNormalizedV25 = true; form.beltMedianNormalizedV26 = true; form.beltMedianNormalizedV27 = true;
+    }
+    async function normalizeOneItemImage(item) {
+      if (!item || !item.imgItem) return;
+      const ref = await getMedianRefFor('item');
+      try { const g = await extractSubjectGeometry(item.imgItem, 'item'); if (g && g.found) item.imgItem = renderGeometryToNormalizedDataUrl(g, 'item', ref); } catch (e) {}
+      item.scale = 100; item.offsetX = 0; item.offsetY = 0;
+      item.medianNormalizedV25 = true; item.medianNormalizedV26 = true; item.medianNormalizedV27 = true;
     }
 
     async function normalizeAllBeltImagesToMedianInState() {
@@ -2271,6 +2335,7 @@
       }
       const allGeoms = beltEntries.map(e => e.geom).concat(formBeltEntries.map(e => e.geom));
       const medianRef = buildMedianReferenceForGeometries(allGeoms, 'belt');
+      AppState.beltMedianRef = medianRef;
 
       for (let i = 0; i < beltEntries.length; i++) {
         const { belt, geom } = beltEntries[i];
@@ -2311,6 +2376,7 @@
         }
       }
       const medianRef = buildMedianReferenceForGeometries(entries.map(e => e.geom), 'item');
+      AppState.itemMedianRef = medianRef;
       for (let i = 0; i < entries.length; i++) {
         const { item, geom } = entries[i];
         if (geom.found) {
@@ -8034,7 +8100,7 @@
           if (lbl) lbl.textContent = `取り込み中… ${done} / ${jobs.length}`;
         }
         if (lbl) lbl.textContent = '大きさをそろえています…';
-        try { await normalizeAllRiderImagesToMedianInState(); } catch (e) {}
+        try { await normalizeSomeRiderImages(jobs.map(j => j.form)); } catch (e) {}
         await saveCurrentData();
         close();
         renderAllModalContents();
@@ -8080,7 +8146,7 @@
             f.imgRider = await compressImageFile(file, 800, 0.85);
             f.colorManuallyEdited = false;
             await applyAutoColorFromFormImage(f);
-            await normalizeAllRiderImagesToMedianInState();
+            await normalizeSomeRiderImages([f]);
             await saveCurrentData();
           } catch (err) { console.error(err); }
           const keepScroll = dom.formListArea.closest('.overflow-y-auto') || document.scrollingElement;
@@ -8661,7 +8727,7 @@
             const f = AppState.forms.find(x => x.id === inp.dataset.id);
             if (f) {
               f.imgRider = rawDataUrl;
-              await normalizeAllRiderImagesToMedianInState();
+              await normalizeSomeRiderImages([f]);
               f.colorManuallyEdited = false;
               await applyAutoColorFromFormImage(f);
               await saveCurrentData();
@@ -8678,7 +8744,7 @@
         btn.addEventListener('click', async () => {
           const f = AppState.forms.find(x => x.id === btn.dataset.id);
           if (f && f.imgRider) {
-            await normalizeAllRiderImagesToMedianInState();
+            await normalizeSomeRiderImages([f]);
             await saveCurrentData();
             renderModalFormList();
             refreshAllUI();
@@ -8721,7 +8787,7 @@
             const f = AppState.forms.find(x => x.id === inp.dataset.id);
             if (f) {
               f.imgSlottedBelt = rawDataUrl;
-              await normalizeAllBeltImagesToMedianInState();
+              await normalizeOneFormBeltImage(f);
               await saveCurrentData();
               renderModalFormList();
               updateSlotsAndButtonUI();
@@ -8736,7 +8802,7 @@
         btn.addEventListener('click', async () => {
           const f = AppState.forms.find(x => x.id === btn.dataset.id);
           if (f && f.imgSlottedBelt) {
-            await normalizeAllBeltImagesToMedianInState();
+            await normalizeOneFormBeltImage(f);
             await saveCurrentData();
             renderModalFormList();
             updateSlotsAndButtonUI();
@@ -9372,7 +9438,7 @@
         btn.addEventListener('click', async () => {
           const it = getItemById(btn.dataset.id);
           if (it && it.imgItem) {
-            await normalizeAllItemImagesToMedianInState();
+            await normalizeOneItemImage(it);
             await saveCurrentData();
             renderModalItemList();
             refreshAllUI();
@@ -9428,7 +9494,7 @@
             const it = getItemById(inp.dataset.id);
             if (it) {
               it.imgItem = rawDataUrl;
-              await normalizeAllItemImagesToMedianInState();
+              await normalizeOneItemImage(it);
               await saveCurrentData();
               renderModalItemList();
               refreshAllUI();
@@ -10308,7 +10374,7 @@
             const b = AppState.belts.find(x => x.id === inp.dataset.id);
             if (b) {
               b.imgBelt = rawDataUrl;
-              await normalizeAllBeltImagesToMedianInState();
+              await normalizeOneBeltImage(b);
               const editS = getEditingSeriesObj();
               if (editS && !editS.defaultBeltId) {
                 editS.defaultBeltId = b.id;
@@ -10330,7 +10396,7 @@
         btn.addEventListener('click', async () => {
           const b = AppState.belts.find(x => x.id === btn.dataset.id);
           if (b && b.imgBelt) {
-            await normalizeAllBeltImagesToMedianInState();
+            await normalizeOneBeltImage(b);
             await saveCurrentData();
             renderModalBeltList();
             refreshAllUI();
