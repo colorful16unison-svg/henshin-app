@@ -3322,7 +3322,7 @@
       const infoMode = cfg.formStageInfoMode || 'full';
 
       const formRider = AppState.riders.find(r => r.id === form.riderId) || getCurrentRider();
-      titleBadge.textContent = `${formRider ? getRiderDisplayName(formRider) + ' ' : ''}${form.formName || ''}`.trim();
+      titleBadge.textContent = `${getFormRiderName(form, formRider)} ${form.formName || ''}`.trim();
 
       const isFormsEncyclopediaMode = (AppState.mainTrayViewMode === 'forms');
       const inlineEditorBox = document.getElementById('inlineFormDescEditorBox');
@@ -3441,8 +3441,8 @@
       AppState.activeSlotIndex = 0;
 
       const formRider = AppState.riders.find(r => r.id === form.riderId) || getCurrentRider();
-      if (formRider) {
-        dom.hudRiderName.textContent = getRiderDisplayName(formRider, 'ライダー名称未設定');
+      if (formRider || getFormRiderOverride(form)) {
+        dom.hudRiderName.textContent = getFormRiderName(form, formRider, 'ライダー名称未設定');
       }
 
       const usedItemNames = [];
@@ -3504,7 +3504,7 @@
       void dom.riderResultArea.offsetWidth;
       dom.riderResultArea.classList.add('animate-rider-cutin');
 
-      const riderTitle = formRider ? formRider.name : '';
+      const riderTitle = getFormRiderName(form, formRider);
       dom.actionHint.textContent = `★ 【フォーム図鑑】 ${riderTitle} ${form.formName || ''} をメイン画面上部に大きく表示中！（下のフォーム一覧をタッチで切替） ★`;
 
       renderItemTray();
@@ -4211,6 +4211,13 @@
     }
     function getDialIndex() { return getDialPos() - 1; } // -1 は「干支」（未選択）
     function getDialLabel(pos) { return pos === 0 ? '干支' : ETO_KANJI[pos - 1]; }
+    // 十二支ダイヤルの設定を出す作品か（仮面ライダーアストロのみ。すでにダイヤル設定がある作品も表示）
+    function seriesUsesDial(seriesId) {
+      const sr = AppState.seriesList.find(x => x.id === seriesId);
+      if (sr && /アストロ/.test(sr.name || '')) return true;
+      return AppState.belts.some(b => b.hasDial && b.seriesId === seriesId);
+    }
+
     // 十二支ダイヤルのフォームに使われているアイテムか（＝12星座のコスモレンズ）
     function isDialItem(itemId) {
       const it = getItemById(itemId);
@@ -4397,6 +4404,18 @@
       ringEl.dataset.rot = String(target);
       ringEl.style.transform = `rotate(${target}deg)`;
       setDialWindowText(w, idx);
+    }
+
+    // ★ フォームごとの「変身後のライダー名」（例：仮面ライダー〇〇ボーグ）。空欄なら持ち主ライダーの通常の名前
+    function getFormRiderOverride(form) {
+      const v = form && typeof form.riderNameOverride === 'string' ? form.riderNameOverride.trim() : '';
+      return v;
+    }
+    function getFormRiderName(form, fallbackRider, fallbackText) {
+      const ov = getFormRiderOverride(form);
+      if (ov) return ov;
+      const r = (form && AppState.riders.find(x => x.id === form.riderId)) || fallbackRider;
+      return r ? getRiderDisplayName(r, fallbackText) : (fallbackText || '');
     }
 
     // ★ 擬似ライダー（正規ライダーとは別の、ライダーに似た姿）
@@ -5085,7 +5104,7 @@
           emptyEmblem.classList.remove('hidden');
           emptyEmblem.classList.add('flex');
         }
-        if (emptyRiderName) emptyRiderName.textContent = formRider ? (formRider.name || '仮面ライダー') : '仮面ライダー';
+        if (emptyRiderName) emptyRiderName.textContent = getFormRiderName(form, formRider) || '仮面ライダー';
         if (emptyFormName) emptyFormName.textContent = form ? (form.formName || '') : '';
       }
     }
@@ -5405,7 +5424,7 @@
       if (rider) {
         const henshinForm = (AppState.status === 'HENSHIN' && AppState.activeHenshinFormId) ? AppState.forms.find(f => f.id === AppState.activeHenshinFormId) : null;
         const shownRider = (henshinForm && AppState.riders.find(r => r.id === henshinForm.riderId)) || rider;
-        dom.hudRiderName.textContent = getRiderDisplayName(shownRider, 'ライダー名称未設定');
+        dom.hudRiderName.textContent = henshinForm ? getFormRiderName(henshinForm, shownRider, 'ライダー名称未設定') : getRiderDisplayName(shownRider, 'ライダー名称未設定');
         if (AppState.status === 'IDLE') {
           applyTheme(
             rider.themeColor || (series ? series.themeColor : '#f97316'),
@@ -6313,7 +6332,7 @@
             </div>
             <div class="flex-1 min-w-0 flex flex-col justify-between gap-1 z-10">
               <div class="flex items-center justify-between gap-1">
-                <span class="text-[9px] font-bold text-amber-300/90 truncate">${formRider ? formRider.name : ''}</span>
+                <span class="text-[9px] font-bold text-amber-300/90 truncate">${getFormRiderName(form, formRider)}</span>
                 ${isShowingOnStage
                   ? `<span class="px-1.5 py-0.2 rounded-full bg-amber-400 text-black text-[8px] font-black shadow shrink-0">上部表示中</span>`
                   : form.isPowerForm
@@ -6392,7 +6411,7 @@
             <div class="w-full mt-1 space-y-0.5 z-10">
               <div class="text-[11px] font-black text-amber-100 truncate">${form.formName || '&nbsp;'}</div>
               ${formRider && AppState.filterTrayByCurrentRider === false
-                ? `<div class="text-[8.5px] text-amber-300/90 truncate">${formRider.name}</div>`
+                ? `<div class="text-[8.5px] text-amber-300/90 truncate">${getFormRiderName(form, formRider)}</div>`
                 : ''
               }
               ${showItems ? `
@@ -7402,8 +7421,8 @@
 
         // 変身したフォームの持ち主のライダー名を出す（全表示で他のライダーのアイテムを使った場合も）
         const henshinRider = AppState.riders.find(r => r.id === matchedForm.riderId) || rider;
-        if (henshinRider) dom.hudRiderName.textContent = getRiderDisplayName(henshinRider, 'ライダー名称未設定');
-        const riderTitle = henshinRider ? getRiderDisplayName(henshinRider) : '';
+        dom.hudRiderName.textContent = getFormRiderName(matchedForm, henshinRider, 'ライダー名称未設定');
+        const riderTitle = getFormRiderName(matchedForm, henshinRider);
         dom.actionHint.textContent = `★ ${riderTitle} ${matchedForm.formName || ''} 変身完了！（右上「位置調整」で写真位置も微調整可） ★`;
       } else {
         applyTheme('#dc2626', '#7f1d1d');
@@ -8402,7 +8421,7 @@
                   <option value="power" class="bg-[#14110d]" ${modeVal === 'power' ? 'selected' : ''}>★強化アイテム1個専用</option>
                 </select>
               </div>
-              <div class="flex items-center gap-1 bg-[#14110d] px-2 py-0.5 rounded border ${formHasDial(form) ? 'border-yellow-300/80' : 'border-[#4a3e30]'}" title="十二支ダイヤル付きベルトで使うフォームの干支">
+              <div class="${(formHasDial(form) || seriesUsesDial(getFormSeriesId(form))) ? 'flex' : 'hidden'} items-center gap-1 bg-[#14110d] px-2 py-0.5 rounded border ${formHasDial(form) ? 'border-yellow-300/80' : 'border-[#4a3e30]'}" title="十二支ダイヤル付きベルトで使うフォームの干支">
                 <span class="text-[9px] text-yellow-200 font-bold">ダイヤル(干支):</span>
                 <select class="bg-transparent text-[11px] font-bold text-amber-100 focus:outline-none cursor-pointer select-form-dial" data-id="${form.id}">
                   <option value="" class="bg-[#14110d]" ${!formHasDial(form) ? 'selected' : ''}>なし</option>
@@ -8552,6 +8571,10 @@
               <div>
                 <label class="block text-[10px] text-[#9c8c74] mb-0.5">フォーム名</label>
                 <input type="text" class="w-full bg-[#14110d] border border-[#4a3e30] rounded px-2 py-1 text-xs text-amber-100 input-form-title" data-id="${form.id}" value="${form.formName || ''}" placeholder="フォーム名を入力">
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-[10px] text-[#9c8c74] mb-0.5">変身後のライダー名（このフォームでライダー名が変わる場合だけ。例：仮面ライダー〇〇ボーグ）</label>
+                <input type="text" class="w-full bg-[#14110d] border ${getFormRiderOverride(form) ? 'border-fuchsia-400/70 text-fuchsia-100' : 'border-[#4a3e30] text-amber-100'} rounded px-2 py-1 text-xs input-form-rider-override" data-id="${form.id}" value="${(form.riderNameOverride || '').replace(/"/g, '&quot;')}" placeholder="空欄なら「${(AppState.riders.find(r => r.id === form.riderId) || {}).name || 'ライダー名'}」のまま">
               </div>
             </div>
 
@@ -8938,6 +8961,16 @@
             await saveCurrentData();
             refreshAllUI();
           }
+        });
+      });
+
+      document.querySelectorAll('.input-form-rider-override').forEach(inp => {
+        inp.addEventListener('input', () => {
+          const f = AppState.forms.find(x => x.id === inp.dataset.id);
+          if (!f) return;
+          f.riderNameOverride = inp.value;
+          clearTimeout(f.__ovSaveT);
+          f.__ovSaveT = setTimeout(async () => { delete f.__ovSaveT; await saveCurrentData(); renderItemTray(); updateSlotsAndButtonUI(); }, 250);
         });
       });
 
@@ -10131,7 +10164,7 @@
                   </select>
                   ${isEditSeriesDefault ? `<span class="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-400 text-[9px] text-amber-300 font-bold">★初期設定ベルト</span>` : ''}
                 </div>
-                <div class="mt-1 p-1.5 rounded border ${belt.hasDial ? 'border-yellow-300/70 bg-yellow-900/10' : 'border-[#3d3327]'} space-y-1">
+                <div class="${(belt.hasDial || seriesUsesDial(belt.seriesId)) ? '' : 'hidden'} mt-1 p-1.5 rounded border ${belt.hasDial ? 'border-yellow-300/70 bg-yellow-900/10' : 'border-[#3d3327]'} space-y-1">
                   <label class="flex items-center gap-1.5 text-[10px] font-bold text-yellow-200 cursor-pointer">
                     <input type="checkbox" class="accent-yellow-400 chk-belt-dial" data-id="${belt.id}" ${belt.hasDial ? 'checked' : ''}>
                     十二支ダイヤル付きベルト（ダイヤル＋アイテムで変身）
